@@ -1,65 +1,140 @@
 #include <Servo.h>
 #include <NewPing.h>
 
+// Pines del motor
+const int motorIzquierdoAdelante = 7;
+const int motorIzquierdoAtras = 6;
+const int motorDerechoAdelante = 5;
+const int motorDerechoAtras = 4;
+
 // Pines del sensor ultrasónico
-const int trigPin = 8;
-const int echoPin = 9;
+const int pinTrig = 8;
+const int pinEcho = 9;
 
-// Crear objeto del sensor
-NewPing sonar(trigPin, echoPin);
-
-// Crear objeto del servomotor
 Servo miServo;
+NewPing sonar(pinTrig, pinEcho);
+
+unsigned long ultimoTiempoMedicion = 0;
+const unsigned long intervaloDeMedicion = 2000; // 2 segundos
 
 void setup() {
-  Serial.begin(9600);             // Iniciar comunicación serial
-  miServo.attach(10);             // Conectar el servomotor al pin 10
-  Serial.println("Iniciando prueba del conjunto servomotor + sensor ultrasónico...");
+  Serial.begin(9600);
+
+  pinMode(motorIzquierdoAdelante, OUTPUT);
+  pinMode(motorIzquierdoAtras, OUTPUT);
+  pinMode(motorDerechoAdelante, OUTPUT);
+  pinMode(motorDerechoAtras, OUTPUT);
+
+  miServo.attach(10);
+  miServo.write(90);
 }
 
 void loop() {
-  // Girar el servo de 0 a 180 grados en pasos de 30°
-  for (int angulo = 0; angulo <= 180; angulo += 30) {
-    miServo.write(angulo);        // Mover servo
-    delay(500);                   // Esperar que el servo se acomode
+  if (millis() - ultimoTiempoMedicion >= intervaloDeMedicion) {
+    int distancia = medirDistancia();
+    Serial.print("Distancia: ");
+    Serial.println(distancia);
 
-    int distancia = sonar.ping_cm(); // Medir distancia
+    int umbral = 20;
 
-    // Mostrar la información
-    Serial.print("Ángulo: ");
-    Serial.print(angulo);
-    Serial.print("° - ");
-
-    if (distancia > 0) {
-      Serial.print("Distancia: ");
-      Serial.print(distancia);
-      Serial.println(" cm");
+    if (distancia > umbral) {
+      avanzarDistancia(distancia);
     } else {
-      Serial.println("No se detecta eco");
+      evitarObstaculo();
     }
 
-    delay(1000);  // Esperar antes de continuar al siguiente ángulo
+    ultimoTiempoMedicion = millis();
   }
+}
 
-  // Girar de regreso de 180 a 0 grados
-  for (int angulo = 180; angulo >= 0; angulo -= 30) {
-    miServo.write(angulo);
+int medirDistancia() {
+  return sonar.ping_cm();
+}
+
+void detenerMovimiento() {
+  digitalWrite(motorIzquierdoAdelante, LOW);
+  digitalWrite(motorIzquierdoAtras, LOW);
+  digitalWrite(motorDerechoAdelante, LOW);
+  digitalWrite(motorDerechoAtras, LOW);
+}
+
+void avanzarConPWM(int velocidad) {
+  velocidad = constrain(velocidad, 0, 255);
+
+  analogWrite(motorIzquierdoAdelante, velocidad);
+  digitalWrite(motorIzquierdoAtras, LOW);
+  analogWrite(motorDerechoAdelante, velocidad);
+  digitalWrite(motorDerechoAtras, LOW);
+}
+
+void retroceder() {
+  digitalWrite(motorIzquierdoAdelante, LOW);
+  digitalWrite(motorIzquierdoAtras, HIGH);
+  digitalWrite(motorDerechoAdelante, LOW);
+  digitalWrite(motorDerechoAtras, HIGH);
+}
+
+void girarIzquierda() {
+  digitalWrite(motorIzquierdoAdelante, LOW);
+  digitalWrite(motorIzquierdoAtras, HIGH);
+  digitalWrite(motorDerechoAdelante, HIGH);
+  digitalWrite(motorDerechoAtras, LOW);
+}
+
+void girarDerecha() {
+  digitalWrite(motorIzquierdoAdelante, HIGH);
+  digitalWrite(motorIzquierdoAtras, LOW);
+  digitalWrite(motorDerechoAdelante, LOW);
+  digitalWrite(motorDerechoAtras, HIGH);
+}
+
+void girar180() {
+  digitalWrite(motorIzquierdoAdelante, HIGH);
+  digitalWrite(motorIzquierdoAtras, LOW);
+  digitalWrite(motorDerechoAdelante, LOW);
+  digitalWrite(motorDerechoAtras, HIGH);
+  delay(2000);
+}
+
+void evitarObstaculo() {
+  detenerMovimiento();
+
+  miServo.write(180);
+  delay(2000);
+  int distanciaIzquierda = medirDistancia();
+
+  miServo.write(0);
+  delay(2000);
+  int distanciaDerecha = medirDistancia();
+
+  miServo.write(90);
+  delay(2000);
+
+  if (distanciaIzquierda > distanciaDerecha && distanciaIzquierda > 20) {
+    girarIzquierda();
     delay(500);
-
-    int distancia = sonar.ping_cm();
-
-    Serial.print("Ángulo: ");
-    Serial.print(angulo);
-    Serial.print("° - ");
-
-    if (distancia > 0) {
-      Serial.print("Distancia: ");
-      Serial.print(distancia);
-      Serial.println(" cm");
-    } else {
-      Serial.println("No se detecta eco");
-    }
-
-    delay(1000);
+    detenerMovimiento();
+  } else if (distanciaDerecha > 20) {
+    girarDerecha();
+    delay(500);
+    detenerMovimiento();
+  } else {
+    girar180();
+    detenerMovimiento();
   }
+}
+
+void avanzarDistancia(int distancia) {
+  int velocidad = map(distancia, 0, 100, 100, 255);
+
+  if (distancia < 5) {
+    detenerMovimiento();
+    return;
+  }
+
+  int tiempoAvance = map(distancia, 0, 100, 500, 1500);
+
+  avanzarConPWM(velocidad);
+  delay(tiempoAvance);
+  detenerMovimiento();
 }
